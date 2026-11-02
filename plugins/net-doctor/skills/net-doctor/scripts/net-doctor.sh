@@ -2,9 +2,10 @@
 # net-doctor — 网络体检 + 自动选最快镜像源并回写配置
 #
 # 用法:
-#   net-doctor             体检并自动修复
+#   net-doctor             体检并修复（pip/npm 自动选源；GitHub 仅检测，默认不改写）
 #   net-doctor --dry-run   只体检不修改
-#   net-doctor --no-github 跳过 GitHub 改写（私有仓库/凭据敏感场景）
+#   net-doctor --github-accel  显式允许公开仓库下载走第三方代理（有供应链风险，私有仓库禁用）
+#   net-doctor --no-github 兼容旧参数：清除 GitHub 改写（等同默认行为）
 #   net-doctor --json      输出机器可读结果（便于被脚本消费）
 #
 # 跨平台: Windows(Git Bash/WSL) / macOS / Linux
@@ -15,11 +16,13 @@ set -u
 DRY=0
 JSON=0
 NO_GH=0
+GH_ACCEL=0
 for a in "$@"; do
   case "$a" in
-    --dry-run)   DRY=1 ;;
-    --json)      JSON=1 ;;
-    --no-github) NO_GH=1 ;;
+    --dry-run)        DRY=1 ;;
+    --json)           JSON=1 ;;
+    --no-github)      NO_GH=1 ;;
+    --github-accel|--github-proxy) GH_ACCEL=1 ;;
     -h|--help) sed -n '2,12p' "$0"; exit 0 ;;
   esac
 done
@@ -191,10 +194,12 @@ NPM_B="$(pick npm)";  NPM_URL="${NPM_B#*|}"
 GH_B="$(pick gh)";    GH_URL="${GH_B#*|}"
 
 if [ "$JSON" = "1" ]; then
-  # github 为空表示直连最优、无需加速改写；github_direct 让调用方不必猜
+  # github 为空表示直连最优；github_direct 让调用方不必猜。
+  # github_accel=false 表示本次不会写入任何第三方改写（安全默认值）。
   if [ -z "$GH_URL" ]; then GH_DIRECT=true; else GH_DIRECT=false; fi
-  printf '{"pip":"%s","pip_alt":"%s","npm":"%s","github":"%s","github_direct":%s}\n' \
-    "$PIP_URL" "$PIP_ALT" "$NPM_URL" "$GH_URL" "$GH_DIRECT"
+  if [ "$GH_ACCEL" = "1" ] && [ "$NO_GH" != "1" ] && [ -n "$GH_URL" ]; then GH_ON=true; else GH_ON=false; fi
+  printf '{"pip":"%s","pip_alt":"%s","npm":"%s","github":"%s","github_direct":%s,"github_accel":%s}\n' \
+    "$PIP_URL" "$PIP_ALT" "$NPM_URL" "$GH_URL" "$GH_DIRECT" "$GH_ON"
   exit 0
 fi
 
@@ -211,7 +216,11 @@ echo "=================================================="
 [ -n "$PIP_URL" ] && echo "  PyPI   : $PIP_URL  (备选: ${PIP_ALT:-无})"
 [ -n "$NPM_URL" ] && echo "  npm    : $NPM_URL"
 if [ -n "$GH_URL" ]; then
-  echo "  GitHub : $GH_URL"
+  if [ "$GH_ACCEL" = "1" ] && [ "$NO_GH" != "1" ]; then
+    echo "  GitHub : 直连不可达 → 将按 --github-accel 启用 $GH_URL（有供应链风险）"
+  else
+    echo "  GitHub : 直连不可达 → $GH_URL 可用，但加速默认关闭（需 --github-accel）"
+  fi
 else
   echo "  GitHub : 直连可用，无需加速"
 fi
@@ -301,15 +310,21 @@ apply_git() {
     git config --global --unset "$key" 2>/dev/null
   done
   if [ -z "$base" ]; then
-    echo "  · GitHub 直连可用，已清除加速改写"
+    echo "  · 已清除所有 GitHub 第三方改写（当前不使用任何代理通道）"
     return
   fi
-  # 只加速下载：clone / fetch 走通道（这两步不携带凭据）
+  # 只有显式 --github-accel 才会走到这里。
+  # 风险必须写在配置写入之前，而不是写在文档里等人去翻。
+  echo "  ! 已按 --github-accel 启用第三方代理：$base"
+  echo "    · 该代理可见全部下载内容，且 git 无法校验制品完整性（可下发被篡改的提交历史）"
+  echo "    · 私有仓库 / 需要凭据的 clone 严禁使用：代理可回 401 诱导 git 交出账号口令或 PAT"
+  echo "    · 核验下载结果：git log -1 --format=%H 与官方发布记录 / 签名比对"
+  # 只改写下载方向
   git config --global "url.${base}/https://github.com/.insteadOf" "https://github.com/" 2>/dev/null
   # push 强制回官方：pushInsteadOf 优先级高于 insteadOf，
   # 保证推送时的账号凭据只会发往 github.com，绝不经过第三方通道
   if git config --global "url.https://github.com/.pushInsteadOf" "https://github.com/" 2>/dev/null; then
-    echo "  ✓ git 下载走 ${base}；push 直连官方（凭据不经第三方）"
+    echo "  ✓ git 下载走 ${base}（push 仍直连官方）"
   else
     echo "  ✗ git 配置写入失败，请检查 git 是否可用"
   fi
@@ -319,9 +334,17 @@ apply_git() {
 [ -n "$NPM_URL" ] && apply_npm "$NPM_URL"
 if [ "$NO_GH" = "1" ]; then
   apply_git ""
-  echo "  · 已按 --no-github 跳过 GitHub 改写（私有仓库场景推荐）"
-else
+  echo "  · 已清除 GitHub 第三方改写（--no-github）"
+elif [ "$GH_ACCEL" = "1" ]; then
   apply_git "$GH_URL"
+else
+  # 默认安全：永不把 GitHub 流量导向第三方。
+  # 老版本写入的 insteadOf 规则也会在这里被清除，属于顺带修复。
+  apply_git ""
+  if [ -n "$GH_URL" ]; then
+    echo "  ! GitHub 直连不可达，加速默认关闭（第三方代理可见下载内容、无法校验完整性）"
+    echo "    需要时显式开启：net-doctor --github-accel   仅限公开仓库，私有仓库禁用"
+  fi
 fi
 # 环境变量优先级高于配置文件，必须同步，否则改了等于没改
 if command -v setx >/dev/null 2>&1; then

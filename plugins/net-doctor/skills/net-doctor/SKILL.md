@@ -2,8 +2,8 @@
 name: net-doctor
 slug: net-doctor
 displayName: 网络急救
-version: 1.1.1
-summary: 并发实测选出最快的国内镜像，一键修复 pip / npm / git 网络失败，支持退避重试与一键回滚
+version: 1.1.2
+summary: 并发实测选出最快的国内镜像，一键修复 pip / npm 网络失败；GitHub 仅检测不改写，加速需显式开启
 description: 诊断并修复中国大陆网络环境引发的依赖与仓库访问失败，覆盖 pip 安装超时、npm 下载缓慢、git clone GitHub 报错等场景。当用户反馈包装不上、下载中断、速度极慢，或出现 CONNECT tunnel failed、Read timed out、ECONNRESET 等网络错误，或需要为团队批量配置国内镜像加速时使用。内置多源并发测速、最优源自动回写、失败退避重试与一键回滚。
 tags: [网络加速, 镜像源, pip, npm, git, 开发环境, 国内网络]
 license: MIT
@@ -41,7 +41,7 @@ agent_created: true
 统一写法（`<skill_dir>` 即本 SKILL.md 所在目录）：
 
 ```bash
-# 体检（可改配置）
+# 体检（可改配置；GitHub 默认不改写）
 bash <skill_dir>/scripts/net-doctor.sh
 # 只体检不修改
 bash <skill_dir>/scripts/net-doctor.sh --dry-run
@@ -127,30 +127,55 @@ bash <skill_dir>/scripts/net-rollback.sh
 
 ## GitHub 阻断的特殊处理
 
-若测速显示 `github.com` 直连不可达（curl 返回 000 或 git 报 `CONNECT tunnel failed, response 502`），说明主站链路被阻断，**重试与超时调整均无效**，必须走加速通道。
+若测速显示 `github.com` 直连不可达（curl 返回 000 或 git 报 `CONNECT tunnel failed, response 502`），说明主站链路被阻断，**重试与超时调整均无效**。
 
-体检脚本会自动测速并选取可用的加速站，并且**只改写下载方向**：
+### 默认行为：不改写，只报告
 
-- `insteadOf` 作用于 clone / fetch —— 公开仓库的这两步不携带任何凭据
-- `pushInsteadOf` 把 push 强制回指 `https://github.com/`，git 中该规则优先级高于 `insteadOf`
+`net-doctor` **默认绝不把 GitHub 流量导向任何第三方通道**，只做检测并提示可用候选。同时会**清除老版本遗留的 `url.*.insteadOf` 改写**，这属于顺带修复。
 
-因此**推送凭据永远不会发往第三方通道**。可这样验证：
+原因有两层硬约束：
+
+- **完整性无法校验**。git 不校验提交签名，代理可以下发一份自洽但被篡改的历史（例如替换成带恶意 `postinstall` 的版本），clone 成功也不代表代码可信。
+- **凭据可能经第三方**。私有仓库的 clone / fetch 需要认证，部分代理会回 401 诱导 git 交出账号口令或 PAT；已配置 `credential.helper` 的机器尤其危险。
+
+### 显式开启：`--github-accel`
+
+只有当用户明确接受上述风险、且**仅用于公开仓库**时，才允许开启：
 
 ```bash
-git ls-remote --get-url                              # 显示加速地址（下载方向）
-git remote get-url --push origin                     # 显示 github.com（推送方向）
+bash <skill_dir>/scripts/net-doctor.sh --github-accel
 ```
 
-注意事项：
+开启后的行为与限制：
 
-- **私有仓库例外**。私有仓库的 clone / fetch 同样需要认证，此时凭据会经过加速通道。处理私有仓库或任何凭据敏感项目时，必须改用 `net-doctor --no-github`，该参数会清除全部改写
-- 加速站会失效，不要硬编码某一个。始终让 net-doctor 重新测速决定
-- 不要删除 `url.*` 配置后又假定 git 可用
+- 只改写下载方向：`insteadOf` 作用于 clone / fetch
+- `pushInsteadOf` 把 push 强制回指 `https://github.com/`，该规则优先级高于 `insteadOf`，所以**推送凭据不会发往第三方**
+- 脚本会在写入配置前打印风险提示，不允许静默生效
+- 加速站会失效，不要硬编码某一个，每次让测速决定
+
+可这样验证当前状态：
+
+```bash
+git config --global --get-regexp '^url\.'            # 有输出 = 存在改写
+git ls-remote --get-url                              # 下载方向实际地址
+git remote get-url --push origin                     # 推送方向应为 github.com
+```
+
+### 下载后的最低核验
+
+即使使用加速通道，也应比对提交标识，避免拿到被替换的历史：
+
+```bash
+git log -1 --format=%H        # 与官方发布页 / release note / 签名记录比对
+git verify-commit HEAD        # 仓库有签名时可直接验证
+```
+
+**私有仓库、需要凭据的 clone、处理敏感代码时，禁止使用 `--github-accel`。**
 
 ## 关键约束
 
 1. **绝不把代理地址写死到任何配置文件**。代理端口（如 `127.0.0.1:63300`）常由宿主程序动态注入、每次会话变化，写死会导致下次启动全盘断网。只在运行时读取环境变量。
-2. **凭据不经第三方**。任何涉及认证的流量（push、私有仓库 clone）必须直连官方。默认配置已用 `pushInsteadOf` 保证 push 不走加速通道；私有仓库场景须显式 `--no-github`。
+2. **默认不把 GitHub 流量交给第三方**。加速默认关闭，只有显式 `--github-accel` 才启用，且限公开仓库；启用时 `pushInsteadOf` 保证 push 仍直连官方。任何凭据相关场景（私有仓库、PAT、敏感代码）一律禁用加速。
 3. **环境变量优先级高于配置文件**。若已设置 `PIP_INDEX_URL` 或 `npm_config_registry`，改 ini / npmrc 不会生效，必须同步更新环境变量。net-doctor 已处理此点。
 4. **不要不加诊断就换源**。海外用户切到国内镜像反而更慢，必须先测速。
 5. **改动前必须备份**。install.sh 已自动备份到 `~/.net-doctor/backup/`。
@@ -175,7 +200,7 @@ Alpine 等精简发行版默认无 bash，需先 `apk add bash curl gawk git`。
 | 脚本 | 作用 |
 |---|---|
 | `scripts/install.sh` | 一键安装 + 首次体检，幂等 |
-| `scripts/net-doctor.sh` | 并发测速所有源，自动选最快并回写配置。支持 `--dry-run`（只看不改）、`--json`（机器可读）、`--no-github`（清除 GitHub 改写，私有仓库必用） |
+| `scripts/net-doctor.sh` | 并发测速所有源，自动选最快并回写 pip/npm 配置。支持 `--dry-run`（只看不改）、`--json`（机器可读）、`--github-accel`（显式启用第三方 GitHub 加速，限公开仓库）、`--no-github`（清除改写，现行默认） |
 | `scripts/net-retry.sh` | 指数退避重试，全失败后自动触发体检 |
 | `scripts/net-rollback.sh` | 一键还原官方源 |
 
