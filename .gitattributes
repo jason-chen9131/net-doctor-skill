@@ -1,0 +1,10 @@
+* text=auto eol=lf
+
+# 脚本必须保持 LF：CRLF 会让 macOS / Linux 报 bad interpreter
+*.sh text eol=lf
+net-doctor text eol=lf
+net-retry text eol=lf
+net-rollback text eol=lf
+
+*.zip binary
+*.png binary

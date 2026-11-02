@@ -1,0 +1,20 @@
+{
+  "name": "net-doctor",
+  "version": "1.0.0",
+  "description": "诊断并修复 pip / npm / git 因国内网络导致的超时与失败，自动测速选最快镜像并回写配置。",
+  "author": {
+    "name": "net-doctor"
+  },
+  "category": "skill",
+  "keywords": [
+    "network",
+    "mirror",
+    "pip",
+    "npm",
+    "git",
+    "proxy",
+    "china",
+    "timeout"
+  ],
+  "license": "MIT"
+}

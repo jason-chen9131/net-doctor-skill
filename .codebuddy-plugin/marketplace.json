@@ -1,0 +1,19 @@
+{
+  "name": "net-doctor-skills",
+  "description": "面向中国大陆网络环境的开发工具链修复技能集合。核心是 net-doctor：测速选源、自动回写、失败重试、一键回滚。",
+  "owner": {
+    "name": "net-doctor"
+  },
+  "metadata": {
+    "version": "1.0.0"
+  },
+  "plugins": [
+    {
+      "name": "net-doctor",
+      "source": "./plugins/net-doctor",
+      "category": "skill",
+      "version": "1.0.0",
+      "description": "诊断并修复 pip / npm / git 因国内网络导致的超时与失败，自动测速选最快镜像并回写配置。"
+    }
+  ]
+}
