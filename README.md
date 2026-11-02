@@ -41,6 +41,11 @@ codebuddy plugin marketplace add https://github.com/jason-chen9131/net-doctor-sk
 codebuddy plugin install net-doctor@net-doctor-skills
 ```
 
+> **在 GitHub 主站被阻断的网络里，请先用方式一装一次。**
+> `marketplace add` 需要 `git clone github.com:443`。实测某些网络下该端口整体不可达
+> （`ping` 通 22 端口、`api.github.com` 也通，唯独 443 超时），此时市场方式必然失败。
+> 先用方式一装好后，net-doctor 会写好加速改写，之后再执行上面的市场命令即可成功。
+
 市场源支持三种形态：
 
 - git 仓库地址：`https://github.com/jason-chen9131/net-doctor-skill`
