@@ -25,6 +25,27 @@ agent_created: true
 
 不要用于：真正的业务逻辑错误、认证失败（401/403）、仓库不存在的 404、本地磁盘问题。先确认错误确实发生在网络层。
 
+## 调用方式（必须遵守）
+
+**永远用绝对路径调用脚本，绝不要裸调 `net-doctor` / `net-retry`。**
+
+原因：Agent 执行的 shell 通常是非交互式的，**不会加载 `~/.bashrc` / `~/.profile`**，PATH 里没有安装目录，alias 也不生效。裸命令会报 `command not found`，这不是本技能坏了，是调用方式错了。
+
+统一写法（`<skill_dir>` 即本 SKILL.md 所在目录）：
+
+```bash
+# 体检（可改配置）
+bash <skill_dir>/scripts/net-doctor
+# 只体检不修改
+bash <skill_dir>/scripts/net-doctor --dry-run
+# 重试包装
+bash <skill_dir>/scripts/net-retry npm install
+# 一键还原
+bash <skill_dir>/scripts/net-rollback
+```
+
+若 install.sh 已执行过，也可用其安装的绝对路径 `bash <skill_dir>/scripts/net-doctor` 等价调用。报 `command not found` 时，第一反应是改用绝对路径，而不是判定技能缺失。
+
 ## 工作流
 
 ### 第一步：判断是「没配」还是「配错了」
@@ -81,20 +102,20 @@ git ls-remote --heads https://github.com/octocat/Hello-World.git
 装依赖时套一层重试，避免偶发抖动被误判为失败：
 
 ```bash
-~/.net-doctor/bin/net-retry npm install
-~/.net-doctor/bin/net-retry pip install -r requirements.txt
+bash <skill_dir>/scripts/net-retry npm install
+bash <skill_dir>/scripts/net-retry pip install -r requirements.txt
 ```
 
 出问题随时重新体检，无需人工判断换哪个源：
 
 ```bash
-~/.net-doctor/bin/net-doctor
+bash <skill_dir>/scripts/net-doctor
 ```
 
 需要撤销全部改动：
 
 ```bash
-~/.net-doctor/bin/net-rollback
+bash <skill_dir>/scripts/net-rollback
 ```
 
 ## GitHub 阻断的特殊处理
