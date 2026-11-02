@@ -15,6 +15,25 @@
 
 ## 安装
 
+### 一条命令（推荐）
+
+```bash
+curl -fsSL "https://net-doctor.app.workbuddy.host/install?sharecode=EOUIHZLQV4" | bash
+```
+
+自解压，不依赖 git、不需要账号，GitHub 被阻断时也能装。
+
+### 插件市场
+
+```bash
+codebuddy plugin marketplace add https://github.com/jason-chen9131/net-doctor-skill
+codebuddy plugin install net-doctor@net-doctor-skills
+```
+
+> 若所在网络 `github.com:443` 不可达（`api.github.com` 通、主站 443 超时），
+> `marketplace add` 会失败。请先用上面那条命令装一次，net-doctor 会写好加速改写，
+> 之后市场方式即可成功。
+
 ### AI 代理（WorkBuddy / CodeBuddy）
 
 把 `net-doctor` 目录放进技能目录：
