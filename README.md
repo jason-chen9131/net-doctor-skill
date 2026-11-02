@@ -18,27 +18,43 @@
 
 ## 安装
 
-### 方式一：作为插件市场安装（推荐）
+### 方式一：一条命令（最快，无需账号）
+
+```bash
+curl -fsSL "https://net-doctor.app.workbuddy.host/install?sharecode=EOUIHZLQV4" | bash
+```
+
+脚本自带完整内容，解压到 `~/.workbuddy/skills/net-doctor` 并配好命令，不依赖 git，也不需要任何账号。
+
+先看再装（只体检、不写文件）：
+
+```bash
+curl -fsSL "https://net-doctor.app.workbuddy.host/install?sharecode=EOUIHZLQV4" | bash -s -- --dry-run
+```
+
+安装页：<https://net-doctor.app.workbuddy.host/?sharecode=EOUIHZLQV4>
+
+### 方式二：作为插件市场安装
 
 ```bash
 codebuddy plugin marketplace add <本仓库地址>
 codebuddy plugin install net-doctor@net-doctor-skills
 ```
 
-支持三种源：
+市场源支持三种形态：
 
 - git 仓库地址：`https://github.com/<user>/net-doctor-skill`
-- zip 直链：`https://.../net-doctor-marketplace.zip`
+- zip 直链（URL 需以 `.zip` 结尾，CLI 据此识别类型）
 - 本地目录：`/path/to/net-doctor-skill`
 
-### 方式二：直接解压到 skills 目录
+### 方式三：直接解压到 skills 目录
 
 ```bash
 unzip net-doctor.zip -d ~/.workbuddy/skills/
 bash ~/.workbuddy/skills/net-doctor/scripts/install.sh
 ```
 
-### 方式三：只跑体检，不装
+### 方式四：只跑体检，不装
 
 ```bash
 bash plugins/net-doctor/scripts/net-doctor --dry-run

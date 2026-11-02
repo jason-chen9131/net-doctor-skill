@@ -36,19 +36,24 @@ echo "=================================================="
 echo ""
 
 # ---------- 1. 环境检查 ----------
-missing=""
-for c in curl awk git; do
-  command -v "$c" >/dev/null 2>&1 || missing="$missing $c"
+hard=""
+for c in curl awk; do
+  command -v "$c" >/dev/null 2>&1 || hard="$hard $c"
 done
-if [ -n "$missing" ]; then
-  echo "✗ 缺少依赖:$missing"
-  echo "  curl 与 awk 必需；git 仅影响 GitHub 加速部分。"
+if [ -n "$hard" ]; then
+  echo "✗ 缺少必需依赖:$hard"
+  echo "  curl 用于测速、awk 用于解析结果，两者缺一不可。"
   echo "  安装方式:"
-  echo "    Debian/Ubuntu : apt install -y curl gawk git"
-  echo "    Alpine        : apk add curl gawk git"
-  echo "    macOS         : 自带 curl/awk，仅需 brew install git"
+  echo "    Debian/Ubuntu : apt install -y curl gawk"
+  echo "    Alpine        : apk add curl gawk"
+  echo "    macOS         : 自带 curl / awk"
   echo "    Windows       : 使用 Git Bash 安装，自带全部依赖"
   exit 1
+fi
+# git 只影响 GitHub 加速这一段，缺了就降级而不是整体中止
+if ! command -v git >/dev/null 2>&1; then
+  echo "! 未安装 git：pip / npm 会正常配置，GitHub 加速这一部分会跳过"
+  echo "  需要时安装: apt install -y git（macOS: brew install git）"
 fi
 echo "✓ 环境检查通过 ($(uname -s 2>/dev/null || echo unknown))"
 

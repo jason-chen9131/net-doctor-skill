@@ -292,6 +292,10 @@ apply_npm() {
 
 apply_git() {
   local base="$1"
+  if ! command -v git >/dev/null 2>&1; then
+    echo "  · 未安装 git，跳过 GitHub 相关配置（pip / npm 不受影响）"
+    return
+  fi
   # 先清掉所有旧改写规则（含 pushInsteadOf），避免规则叠加打架
   git config --global --get-regexp '^url\..*\.(insteadof|pushinsteadof)$' 2>/dev/null | while read -r key _v; do
     git config --global --unset "$key" 2>/dev/null
