@@ -2,9 +2,9 @@
 name: net-doctor
 slug: net-doctor
 displayName: 网络急救
-version: 1.1.2
-summary: 并发实测选出最快的国内镜像，一键修复 pip / npm 网络失败；GitHub 仅检测不改写，加速需显式开启
-description: 诊断并修复中国大陆网络环境引发的依赖与仓库访问失败，覆盖 pip 安装超时、npm 下载缓慢、git clone GitHub 报错等场景。当用户反馈包装不上、下载中断、速度极慢，或出现 CONNECT tunnel failed、Read timed out、ECONNRESET 等网络错误，或需要为团队批量配置国内镜像加速时使用。内置多源并发测速、最优源自动回写、失败退避重试与一键回滚。
+version: 1.1.3
+summary: 并发实测（内容校验防误判）选出最快的国内镜像，写入前快照、写入后验证；GitHub 仅检测不改写
+description: 诊断并修复中国大陆网络环境引发的依赖与仓库访问失败，覆盖 pip 安装超时、npm 下载缓慢、git clone GitHub 报错等场景。当用户反馈包装不上、下载中断、速度极慢，或出现 CONNECT tunnel failed、Read timed out、ECONNRESET 等网络错误，或需要为团队批量配置国内镜像加速时使用。内置带内容校验的多源并发测速、最优源自动回写（改前快照、改后端到端验证、失败自动还原）、失败退避重试与快照级一键回滚。
 tags: [网络加速, 镜像源, pip, npm, git, 开发环境, 国内网络]
 license: MIT
 homepage: https://github.com/jason-chen9131/net-doctor-skill
@@ -73,7 +73,13 @@ git config --global --get-regexp '^url\.' 2>&1
 bash <skill_dir>/scripts/install.sh
 ```
 
-安装器会：备份原配置 → 安装脚本到 `~/.net-doctor/bin` → 写入 shell PATH → git 传输加固 → 执行一次完整体检并自动选源。幂等，可重复执行。
+安装器会：备份原配置 → 安装脚本到 `~/.net-doctor/bin` → git 传输加固 → 执行一次完整体检并自动选源。幂等，可重复执行。
+
+**默认不修改任何 shell 启动文件**（收敛写入范围）。确实想让新终端直接敲 `net-doctor` 命令时，显式开启（写入前会先备份 rc 文件）：
+
+```bash
+bash <skill_dir>/scripts/install.sh --with-shell-integration
+```
 
 只体检不修改：
 
@@ -123,6 +129,59 @@ bash <skill_dir>/scripts/net-doctor.sh
 
 ```bash
 bash <skill_dir>/scripts/net-rollback.sh
+```
+
+## 实际输出示例
+
+体检测速段（每次运行数值不同，此处为真实截取）：
+
+```text
+【PyPI 镜像】
+  清华             0.24s    https://pypi.tuna.tsinghua.edu.cn/simple
+  中科大           0.51s    https://mirrors.ustc.edu.cn/pypi/simple
+  腾讯云           0.33s    https://mirrors.cloud.tencent.com/pypi/simple
+  PyPI官方         --       https://pypi.org/simple
+...
+==================================================
+  最优选择
+==================================================
+  PyPI   : https://mirrors.aliyun.com/pypi/simple  (备选: https://pypi.tuna.tsinghua.edu.cn/simple)
+  npm    : https://registry.npmmirror.com
+  GitHub : 直连可用 (0.92s)；第三方通道更快但默认关闭（需 --github-accel）
+
+  · 原配置快照 → /home/u/.net-doctor/backups/20261103022841（net-rollback 可完整还原）
+  ✓ pip 配置已更新 → https://mirrors.aliyun.com/pypi/simple
+  ✓ npm 配置已更新 → https://registry.npmmirror.com
+  · 已清除所有 GitHub 第三方改写（当前不使用任何代理通道）
+  ✓ pip 源端到端验证通过
+  ✓ npm 源端到端验证通过
+```
+
+`--json` 输出（供脚本消费）：
+
+```json
+{"pip":"https://mirrors.aliyun.com/pypi/simple","pip_alt":"https://pypi.tuna.tsinghua.edu.cn/simple","npm":"https://registry.npmmirror.com","github":"https://hk.gh-proxy.org","github_direct":false,"github_accel":false}
+```
+
+回滚（快照级完整还原，`--list` 先看有哪些快照）：
+
+```text
+$ net-rollback --list
+可用快照（/home/u/.net-doctor/backups）：
+  20261103022841  pip:有 npm:有 git:有
+$ net-rollback
+正在回滚网络配置（快照级完整还原）...
+  使用快照: /home/u/.net-doctor/backups/20261103022841
+  ✓ pip 配置已还原为你修改前的原内容
+  ✓ .npmrc 已还原为你修改前的原内容
+  ✓ 已清除 GitHub 加速改写
+```
+
+写入后验证失败的自动还原（极端网络下触发，exit 3）：
+
+```text
+  ✗ npm 源验证失败（写入后复查不可用），已还原原配置
+本次修改已全部撤销。可能是瞬时网络抖动，稍后重新运行即可。
 ```
 
 ## GitHub 阻断的特殊处理
@@ -178,7 +237,7 @@ git verify-commit HEAD        # 仓库有签名时可直接验证
 2. **默认不把 GitHub 流量交给第三方**。加速默认关闭，只有显式 `--github-accel` 才启用，且限公开仓库；启用时 `pushInsteadOf` 保证 push 仍直连官方。任何凭据相关场景（私有仓库、PAT、敏感代码）一律禁用加速。
 3. **环境变量优先级高于配置文件**。若已设置 `PIP_INDEX_URL` 或 `npm_config_registry`，改 ini / npmrc 不会生效，必须同步更新环境变量。net-doctor 已处理此点。
 4. **不要不加诊断就换源**。海外用户切到国内镜像反而更慢，必须先测速。
-5. **改动前必须备份**。install.sh 已自动备份到 `~/.net-doctor/backup/`。
+5. **改动前必快照、写入后必验证**。net-doctor 每次写配置前把原文件逐字节快照到 `~/.net-doctor/backups/<时间戳>/`（含 pip / npm / git 全局 / Windows 镜像环境变量），写入后立刻端到端复查，失败自动还原并退出码 3。
 6. **报告要给数据**。给出耗时对比，让用户能判断是否真的修好了。
 
 ## 平台差异（易错点）
@@ -199,10 +258,10 @@ Alpine 等精简发行版默认无 bash，需先 `apk add bash curl gawk git`。
 
 | 脚本 | 作用 |
 |---|---|
-| `scripts/install.sh` | 一键安装 + 首次体检，幂等 |
-| `scripts/net-doctor.sh` | 并发测速所有源，自动选最快并回写 pip/npm 配置。支持 `--dry-run`（只看不改）、`--json`（机器可读）、`--github-accel`（显式启用第三方 GitHub 加速，限公开仓库）、`--no-github`（清除改写，现行默认） |
+| `scripts/install.sh` | 一键安装 + 首次体检，幂等；shell 启动文件仅在 `--with-shell-integration` 时修改 |
+| `scripts/net-doctor.sh` | 并发测速所有源（响应体内容校验，报错页不计为可用），自动选最快并回写 pip/npm 配置；写入前快照、写入后端到端验证、失败自动还原。支持 `--dry-run`（只看不改）、`--json`（机器可读）、`--github-accel`（显式启用第三方 GitHub 加速，限公开仓库）、`--no-github`（清除改写，现行默认） |
 | `scripts/net-retry.sh` | 指数退避重试，全失败后自动触发体检 |
-| `scripts/net-rollback.sh` | 一键还原官方源 |
+| `scripts/net-rollback.sh` | 快照级完整还原（保留你原有的个性化设置）；`--list` 查看可用快照 |
 
 ## 参考
 

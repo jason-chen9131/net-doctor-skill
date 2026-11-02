@@ -6,6 +6,9 @@
 #   ./install.sh --dry-run      只检查环境，不写入任何配置
 #   ./install.sh --no-fix       只安装脚本，不改镜像配置
 #   ./install.sh --dir <path>   自定义安装目录
+#   ./install.sh --with-shell-integration
+#                               可选：把安装目录写进 .bashrc/.zshrc 的 PATH
+#                               （默认不改任何 shell 启动文件，收敛写入范围）
 #
 # 幂等: 可重复执行，不会重复写配置。
 
@@ -13,13 +16,15 @@ set -u
 
 DRY=0
 FIX=1
+WITH_SHELL=0
 DEST=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --dry-run) DRY=1 ;;
     --no-fix)  FIX=0 ;;
+    --with-shell-integration) WITH_SHELL=1 ;;
     --dir)     DEST="${2:-}"; shift ;;
-    -h|--help) sed -n '2,12p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,15p' "$0"; exit 0 ;;
   esac
   shift
 done
@@ -91,7 +96,10 @@ else
   echo "✓ 脚本已安装 → $DEST"
 fi
 
-# ---------- 4. 写入 shell 配置（PATH） ----------
+# ---------- 4. 写入 shell 配置（PATH，可选） ----------
+# 默认不改任何 shell 启动文件（安全评估建议：收敛写入范围）。
+# 确实想要「新开终端直接敲 net-doctor」时，用 --with-shell-integration 显式开启；
+# 写入前先备份 rc 文件，标记块幂等，可用 net-rollback 的思路手动删除标记块。
 add_path_block() {
   local rc="$1" dest="$2"
   [ -f "$rc" ] || touch "$rc" 2>/dev/null || return
@@ -99,6 +107,8 @@ add_path_block() {
     echo "· $rc 已配置，跳过"
     return
   fi
+  cp -f "$rc" "$rc.net-doctor.bak.$STAMP" 2>/dev/null \
+    && echo "· 已备份 $rc → $rc.net-doctor.bak.$STAMP"
   {
     echo ""
     echo "# >>> net-doctor >>>"
@@ -108,7 +118,7 @@ add_path_block() {
   echo "✓ 已写入 $rc"
 }
 
-if [ "$DRY" = "0" ]; then
+if [ "$DRY" = "0" ] && [ "$WITH_SHELL" = "1" ]; then
   for rc in "$HOME/.bashrc" "$HOME/.zshrc"; do
     if [ "$rc" = "$HOME/.zshrc" ] && [ ! -f "$rc" ]; then
       continue
@@ -119,6 +129,9 @@ if [ "$DRY" = "0" ]; then
   if [ "$(uname -s 2>/dev/null)" != "MINGW64_NT" ] && [ "$(uname -s 2>/dev/null | cut -c1-6)" != "MINGW" ]; then
     add_path_block "$HOME/.bash_profile" "$DEST"
   fi
+else
+  echo "· 未修改 shell 启动文件（如需直接敲 net-doctor 命令，加 --with-shell-integration 重装，"
+  echo "  或把 $DEST 加入 PATH）"
 fi
 
 # ---------- 5. git 传输加固（与镜像无关，纯稳定性） ----------
@@ -152,10 +165,10 @@ echo "  安装完成"
 echo "=================================================="
 echo "  体检 / 修复 : $DEST/net-doctor"
 echo "  失败重试    : $DEST/net-retry <命令>"
-echo "  一键还原    : $DEST/net-rollback"
+echo "  一键还原    : $DEST/net-rollback（快照级完整还原，--list 查看快照）"
 echo ""
 echo "  GitHub 加速默认关闭（第三方代理不校验完整性）。确需加速公开仓库时:"
 echo "    $DEST/net-doctor --github-accel"
 echo ""
-echo "  新开终端后可直接使用 net-doctor 命令。"
+echo "  测速带内容校验；配置修改前自动快照，修改后端到端验证，失败自动还原。"
 echo ""
