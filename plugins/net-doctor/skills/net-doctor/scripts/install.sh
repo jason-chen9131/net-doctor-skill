@@ -83,8 +83,8 @@ if [ "$DRY" = "1" ]; then
 else
   mkdir -p "$DEST"
   for s in net-doctor net-retry net-rollback; do
-    if [ -f "$HERE/$s" ]; then
-      cp -f "$HERE/$s" "$DEST/$s"
+    if [ -f "$HERE/$s.sh" ]; then
+      cp -f "$HERE/$s.sh" "$DEST/$s"
       chmod +x "$DEST/$s"
     fi
   done

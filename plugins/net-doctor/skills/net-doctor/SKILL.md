@@ -1,6 +1,13 @@
 ---
 name: net-doctor
+slug: net-doctor
+displayName: 网络急救
+version: 1.1.1
+summary: 并发实测选出最快的国内镜像，一键修复 pip / npm / git 网络失败，支持退避重试与一键回滚
 description: 诊断并修复中国大陆网络环境引发的依赖与仓库访问失败，覆盖 pip 安装超时、npm 下载缓慢、git clone GitHub 报错等场景。当用户反馈包装不上、下载中断、速度极慢，或出现 CONNECT tunnel failed、Read timed out、ECONNRESET 等网络错误，或需要为团队批量配置国内镜像加速时使用。内置多源并发测速、最优源自动回写、失败退避重试与一键回滚。
+tags: [网络加速, 镜像源, pip, npm, git, 开发环境, 国内网络]
+license: MIT
+homepage: https://github.com/jason-chen9131/net-doctor-skill
 agent_created: true
 ---
 
@@ -35,16 +42,16 @@ agent_created: true
 
 ```bash
 # 体检（可改配置）
-bash <skill_dir>/scripts/net-doctor
+bash <skill_dir>/scripts/net-doctor.sh
 # 只体检不修改
-bash <skill_dir>/scripts/net-doctor --dry-run
+bash <skill_dir>/scripts/net-doctor.sh --dry-run
 # 重试包装
-bash <skill_dir>/scripts/net-retry npm install
+bash <skill_dir>/scripts/net-retry.sh npm install
 # 一键还原
-bash <skill_dir>/scripts/net-rollback
+bash <skill_dir>/scripts/net-rollback.sh
 ```
 
-若 install.sh 已执行过，也可用其安装的绝对路径 `bash <skill_dir>/scripts/net-doctor` 等价调用。报 `command not found` 时，第一反应是改用绝对路径，而不是判定技能缺失。
+若 install.sh 已执行过，也可用其安装的绝对路径 `bash <skill_dir>/scripts/net-doctor.sh` 等价调用。报 `command not found` 时，第一反应是改用绝对路径，而不是判定技能缺失。
 
 ## 工作流
 
@@ -102,20 +109,20 @@ git ls-remote --heads https://github.com/octocat/Hello-World.git
 装依赖时套一层重试，避免偶发抖动被误判为失败：
 
 ```bash
-bash <skill_dir>/scripts/net-retry npm install
-bash <skill_dir>/scripts/net-retry pip install -r requirements.txt
+bash <skill_dir>/scripts/net-retry.sh npm install
+bash <skill_dir>/scripts/net-retry.sh pip install -r requirements.txt
 ```
 
 出问题随时重新体检，无需人工判断换哪个源：
 
 ```bash
-bash <skill_dir>/scripts/net-doctor
+bash <skill_dir>/scripts/net-doctor.sh
 ```
 
 需要撤销全部改动：
 
 ```bash
-bash <skill_dir>/scripts/net-rollback
+bash <skill_dir>/scripts/net-rollback.sh
 ```
 
 ## GitHub 阻断的特殊处理
@@ -168,9 +175,9 @@ Alpine 等精简发行版默认无 bash，需先 `apk add bash curl gawk git`。
 | 脚本 | 作用 |
 |---|---|
 | `scripts/install.sh` | 一键安装 + 首次体检，幂等 |
-| `scripts/net-doctor` | 并发测速所有源，自动选最快并回写配置。支持 `--dry-run`（只看不改）、`--json`（机器可读）、`--no-github`（清除 GitHub 改写，私有仓库必用） |
-| `scripts/net-retry` | 指数退避重试，全失败后自动触发体检 |
-| `scripts/net-rollback` | 一键还原官方源 |
+| `scripts/net-doctor.sh` | 并发测速所有源，自动选最快并回写配置。支持 `--dry-run`（只看不改）、`--json`（机器可读）、`--no-github`（清除 GitHub 改写，私有仓库必用） |
+| `scripts/net-retry.sh` | 指数退避重试，全失败后自动触发体检 |
+| `scripts/net-rollback.sh` | 一键还原官方源 |
 
 ## 参考
 

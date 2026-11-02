@@ -37,9 +37,11 @@ done
 echo "" >&2
 echo "[net-retry] 已重试 $MAX 次仍失败，触发网络体检..." >&2
 
-CANDIDATES="$(dirname "$0")/net-doctor"
+CANDIDATES="$(dirname "$0")/net-doctor.sh"
 if [ -x "$CANDIDATES" ]; then
   "$CANDIDATES" --dry-run
+elif [ -x "$(dirname "$0")/net-doctor" ]; then
+  "$(dirname "$0")/net-doctor" --dry-run
 elif command -v net-doctor >/dev/null 2>&1; then
   net-doctor --dry-run
 fi
