@@ -37,13 +37,13 @@ curl -fsSL "https://net-doctor.app.workbuddy.host/install?sharecode=EOUIHZLQV4" 
 ### 方式二：作为插件市场安装
 
 ```bash
-codebuddy plugin marketplace add <本仓库地址>
+codebuddy plugin marketplace add https://github.com/jason-chen9131/net-doctor-skill
 codebuddy plugin install net-doctor@net-doctor-skills
 ```
 
 市场源支持三种形态：
 
-- git 仓库地址：`https://github.com/<user>/net-doctor-skill`
+- git 仓库地址：`https://github.com/jason-chen9131/net-doctor-skill`
 - zip 直链（URL 需以 `.zip` 结尾，CLI 据此识别类型）
 - 本地目录：`/path/to/net-doctor-skill`
 
