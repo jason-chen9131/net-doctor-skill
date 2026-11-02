@@ -6,5 +6,10 @@ net-doctor text eol=lf
 net-retry text eol=lf
 net-rollback text eol=lf
 
+# 技能定义与清单必须是 LF：
+# 加载器用 /name:\s*(.+?)\n/ 解析 frontmatter，CRLF 会把 \r 带进技能名
+*.md text eol=lf
+*.json text eol=lf
+
 *.zip binary
 *.png binary

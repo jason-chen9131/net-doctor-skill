@@ -62,7 +62,7 @@ bash ~/.workbuddy/skills/net-doctor/scripts/install.sh
 ### 方式四：只跑体检，不装
 
 ```bash
-bash plugins/net-doctor/scripts/net-doctor --dry-run
+bash plugins/net-doctor/skills/net-doctor/scripts/net-doctor --dry-run
 ```
 
 ## 安装后怎么用
