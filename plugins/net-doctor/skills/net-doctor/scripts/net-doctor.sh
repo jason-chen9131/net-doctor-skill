@@ -4,11 +4,14 @@
 # 用法:
 #   net-doctor             体检并修复（测速带内容校验；写入前快照，写入后端到端验证）
 #   net-doctor --dry-run   只体检不修改
-#   net-doctor --github-accel  显式允许公开仓库下载走第三方代理（有供应链风险，私有仓库禁用）
-#   net-doctor --no-github 兼容旧参数：清除 GitHub 改写（等同默认行为）
+#   net-doctor --github-accel <代理基址>
+#                          显式让公开仓库下载走你指定的第三方代理（有供应链风险，私有仓库禁用）
+#   net-doctor --no-github 兼容旧参数：清除本工具写入的 GitHub 改写（等同默认行为）
 #   net-doctor --json      输出机器可读结果（便于被脚本消费）
 #
-# 写入的任何配置都可被 net-rollback 从 ~/.net-doctor/backups/ 完整还原。
+# 本工具不内置、不推荐任何第三方代理域名；需要加速时由你显式提供可信代理。
+# 写入的任何配置都可被 net-rollback 从 ~/.net-doctor/backups/ 完整还原；
+# 清理只针对本工具写入的规则，你自定义的其他 git 改写永远保持不动。
 #
 # 跨平台: Windows(Git Bash/WSL) / macOS / Linux
 # 依赖: bash 3.2+, curl, awk（系统自带）
@@ -19,13 +22,15 @@ DRY=0
 JSON=0
 NO_GH=0
 GH_ACCEL=0
+GH_ACCEL_URL=""
 for a in "$@"; do
   case "$a" in
     --dry-run)        DRY=1 ;;
     --json)           JSON=1 ;;
     --no-github)      NO_GH=1 ;;
     --github-accel|--github-proxy) GH_ACCEL=1 ;;
-    -h|--help) sed -n '2,14p' "$0"; exit 0 ;;
+    http://*|https://*) GH_ACCEL_URL="$a" ;;
+    -h|--help) sed -n '2,16p' "$0"; exit 0 ;;
   esac
 done
 
@@ -48,6 +53,26 @@ mkdir -p "$TMPD" 2>/dev/null
 cleanup() { rm -f "$TMPD"/* 2>/dev/null; rmdir "$TMPD" 2>/dev/null; }
 trap 'cleanup' EXIT
 
+# 本工具写入过的 git 规则登记（清理时只删登记过的，绝不动用户自定义规则）
+STATE_DIR="$HOME/.net-doctor/state"
+OWNED_RULES="$STATE_DIR/git-rules.txt"
+mkdir -p "$STATE_DIR" 2>/dev/null
+touch "$OWNED_RULES" 2>/dev/null
+# 历史版本（<=1.1.3）内置过的第三方加速域名 —— 仅用于清理老版本遗留的改写，
+# 不再作为加速候选提供
+LEGACY_PAT='ghfast\.top|gh-proxy\.com|hk\.gh-proxy\.org|ghproxy\.com|mirror\.ghproxy\.com|ghproxy\.net'
+
+clear_owned_rules() {
+  command git config --global --get-regexp '^url\..*\.(insteadof|pushinsteadof)$' 2>/dev/null | \
+  while IFS=' ' read -r key _v; do
+    [ -z "$key" ] && continue
+    if grep -qxF "$key" "$OWNED_RULES" 2>/dev/null || printf '%s' "$key" | grep -Eq "$LEGACY_PAT"; then
+      command git config --global --unset "$key" 2>/dev/null
+    fi
+  done
+  : > "$OWNED_RULES" 2>/dev/null
+}
+
 # ---------- 候选源 ----------
 PIP_C=(
   "tuna|清华|https://pypi.tuna.tsinghua.edu.cn/simple"
@@ -61,10 +86,11 @@ NPM_C=(
   "tencent|腾讯云|https://mirrors.cloud.tencent.com/npm/"
   "npmjs|官方|https://registry.npmjs.org"
 )
+# v1.1.4：不再内置任何第三方代理候选。
+# 云鼎实验室 2026-11-03 报告：gh-proxy.com（情报 m=7）与 hk.gh-proxy.org（m=5）
+# 命中强恶意情报，一律移除；公共加速通道同样不内置 —— 需要加速时由用户显式提供
+# 自己的可信代理基址（--github-accel <url>），工具只做测速与内容校验。
 GH_C=(
-  "ghfast|ghfast.top|https://ghfast.top"
-  "ghproxy|gh-proxy.com|https://gh-proxy.com"
-  "ghproxyhkor|hk.gh-proxy.org|https://hk.gh-proxy.org"
   "direct|直连|"
 )
 
@@ -129,7 +155,12 @@ run_group() {  # run_group <标签> <超时> <marker> <探测后缀> <candidates
 
 run_group_gh() {
   local i=0 entry base
-  for entry in "${GH_C[@]}"; do
+  # 候选 = 直连 +（若用户显式提供）用户指定的代理基址
+  local -a candidates=("${GH_C[@]}")
+  if [ -n "$GH_ACCEL_URL" ]; then
+    candidates+=("user|用户指定|$GH_ACCEL_URL")
+  fi
+  for entry in "${candidates[@]}"; do
     base="${entry#*|}"; base="${base#*|}"
     if [ -z "$base" ]; then
       ( probe "https://github.com${GH_PROBE_GIT}" "$GH_MARKER" 10 > "$TMPD/gh.$i" ) &
@@ -140,7 +171,7 @@ run_group_gh() {
   done
   wait
   i=0
-  for entry in "${GH_C[@]}"; do
+  for entry in "${candidates[@]}"; do
     base="${entry#*|}"; base="${base#*|}"
     printf "gh|%s|%s|%s\n" "${entry%%|*}" "$base" \
       "$(cat "$TMPD/gh.$i" 2>/dev/null || echo 99)" >> "$TMPD/results"
@@ -183,6 +214,7 @@ label_of() {
     aliyun) echo 阿里云 ;; pypi) echo "PyPI官方" ;; npmmirror) echo npmmirror ;;
     npmjs) echo "npm官方" ;; ghfast) echo ghfast.top ;;
     ghproxy) echo gh-proxy.com ;; ghproxyhkor) echo hk.gh-proxy.org ;;
+    user) echo "用户指定" ;;
     direct) echo "GitHub直连" ;; *) echo "$1" ;;
   esac
 }
@@ -254,7 +286,12 @@ if [ -n "$GH_URL" ]; then
     fi
   fi
 else
-  echo "  GitHub : 直连可用且为最快，无需加速"
+  if awk -v t="$GH_DIRECT_T" 'BEGIN{exit !(t<99)}'; then
+    echo "  GitHub : 直连可用且为最快，无需加速"
+  else
+    echo "  GitHub : 直连不可达；本工具不内置任何第三方代理（情报风险），"
+    echo "           确需加速时自行指定可信代理：net-doctor --github-accel https://your-proxy.example"
+  fi
 fi
 echo ""
 
@@ -337,25 +374,27 @@ apply_git() {
     echo "  · 未安装 git，跳过 GitHub 相关配置（pip / npm 不受影响）"
     return
   fi
-  # 先清掉所有旧改写规则（含 pushInsteadOf），避免规则叠加打架
-  git config --global --get-regexp '^url\..*\.(insteadof|pushinsteadof)$' 2>/dev/null | while read -r key _v; do
-    git config --global --unset "$key" 2>/dev/null
-  done
+  # 只清除本工具写入的规则（state 登记）+ 老版本遗留域名；
+  # 用户自定义的其他 url.* 改写（公司内部转发等）一律保持不动 —— 云鼎报告整改项
+  clear_owned_rules
   if [ -z "$base" ]; then
-    echo "  · 已清除所有 GitHub 第三方改写（当前不使用任何代理通道）"
+    echo "  · 已清除本工具写入的 GitHub 改写（你自定义的其他 git 改写规则保持不动）"
     return
   fi
-  # 只有显式 --github-accel 才会走到这里。
+  # 只有显式 --github-accel <代理基址> 才会走到这里。
   # 风险必须写在配置写入之前，而不是写在文档里等人去翻。
-  echo "  ! 已按 --github-accel 启用第三方代理：$base"
+  echo "  ! 已按 --github-accel 启用你指定的第三方代理：$base"
   echo "    · 该代理可见全部下载内容，且 git 无法校验制品完整性（可下发被篡改的提交历史）"
   echo "    · 私有仓库 / 需要凭据的 clone 严禁使用：代理可回 401 诱导 git 交出账号口令或 PAT"
   echo "    · 核验下载结果：git log -1 --format=%H 与官方发布记录 / 签名比对"
   # 只改写下载方向
-  git config --global "url.${base}/https://github.com/.insteadOf" "https://github.com/" 2>/dev/null
+  if command git config --global "url.${base}/https://github.com/.insteadOf" "https://github.com/" 2>/dev/null; then
+    printf 'url.%s/https://github.com/.insteadof\n' "$base" >> "$OWNED_RULES" 2>/dev/null
+  fi
   # push 强制回官方：pushInsteadOf 优先级高于 insteadOf，
   # 保证推送时的账号凭据只会发往 github.com，绝不经过第三方通道
-  if git config --global "url.https://github.com/.pushInsteadOf" "https://github.com/" 2>/dev/null; then
+  if command git config --global "url.https://github.com/.pushInsteadOf" "https://github.com/" 2>/dev/null; then
+    printf 'url.https://github.com/.pushinsteadof\n' >> "$OWNED_RULES" 2>/dev/null
     echo "  ✓ git 下载走 ${base}（push 仍直连官方）"
   else
     echo "  ✗ git 配置写入失败，请检查 git 是否可用"
@@ -426,16 +465,25 @@ fi
 [ -n "$NPM_URL" ] && apply_npm "$NPM_URL"
 if [ "$NO_GH" = "1" ]; then
   apply_git ""
-  echo "  · 已清除 GitHub 第三方改写（--no-github）"
+  echo "  · 已清除本工具写入的 GitHub 改写（--no-github）"
 elif [ "$GH_ACCEL" = "1" ]; then
-  apply_git "$GH_URL"
+  if [ -n "$GH_ACCEL_URL" ]; then
+    # 用户显式提供了可信代理基址，按指定写入（即使直连更快 —— 这是用户的明确选择）
+    apply_git "$GH_ACCEL_URL"
+  else
+    apply_git ""
+    echo "  ! --github-accel 未提供代理地址，未写入任何改写。"
+    echo "    v1.1.4 起本工具不再内置任何第三方代理域名（gh-proxy.com / hk.gh-proxy.org"
+    echo "    命中恶意情报，已移除）。确需加速公开仓库时指定你自己的可信代理："
+    echo "      net-doctor --github-accel https://your-proxy.example"
+  fi
 else
   # 默认安全：永不把 GitHub 流量导向第三方。
   # 老版本写入的 insteadOf 规则也会在这里被清除，属于顺带修复。
   apply_git ""
-  if [ -n "$GH_URL" ] && ! awk -v t="$GH_DIRECT_T" 'BEGIN{exit !(t<99)}'; then
-    echo "  ! GitHub 直连不可达，加速默认关闭（第三方代理可见下载内容、无法校验完整性）"
-    echo "    需要时显式开启：net-doctor --github-accel   仅限公开仓库，私有仓库禁用"
+  if ! awk -v t="$GH_DIRECT_T" 'BEGIN{exit !(t<99)}'; then
+    echo "  ! GitHub 直连不可达。本工具不内置第三方代理（第三方代理可见下载内容、无法校验完整性），"
+    echo "    确需加速公开仓库时自行指定：net-doctor --github-accel https://your-proxy.example"
   fi
 fi
 # 环境变量优先级高于配置文件，必须同步，否则改了等于没改

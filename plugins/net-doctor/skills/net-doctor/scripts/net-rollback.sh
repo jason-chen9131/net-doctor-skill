@@ -6,8 +6,9 @@
 #   net-rollback --list     列出所有可用快照
 #
 # 还原范围:
-#   pip 配置（pip.conf / pip.ini）、.npmrc、git 全局 url.* 改写、
+#   pip 配置（pip.conf / pip.ini）、.npmrc、git url.* 改写规则（从快照逐条写回）、
 #   Windows 用户级镜像环境变量（原值恢复，原本没有的删除）。
+#   你自定义的、与 net-doctor 无关的 git 改写规则不会被删除。
 
 set -u
 
@@ -18,6 +19,20 @@ case "$OS" in
 esac
 NPMRC="$HOME/.npmrc"
 BK_ROOT="$HOME/.net-doctor/backups"
+
+# 本工具写入过的规则登记 + 历史版本遗留域名（仅用于清理自身写入，不动用户自定义规则）
+OWNED_RULES="$HOME/.net-doctor/state/git-rules.txt"
+LEGACY_PAT='ghfast\.top|gh-proxy\.com|hk\.gh-proxy\.org|ghproxy\.com|mirror\.ghproxy\.com|ghproxy\.net'
+
+clear_owned_rules() {
+  command git config --global --get-regexp '^url\..*\.(insteadof|pushinsteadof)$' 2>/dev/null | \
+  while IFS=' ' read -r key _v; do
+    [ -z "$key" ] && continue
+    if grep -qxF "$key" "$OWNED_RULES" 2>/dev/null || printf '%s' "$key" | grep -Eq "$LEGACY_PAT"; then
+      command git config --global --unset "$key" 2>/dev/null
+    fi
+  done
+}
 
 if [ "${1:-}" = "--list" ]; then
   echo "可用快照（$BK_ROOT）："
@@ -78,12 +93,27 @@ else
     && echo "  ✓ 已移走 .npmrc（恢复官方 npm）"
 fi
 
-# 清除 GitHub 加速改写（含 pushInsteadOf）
+# 清除本工具写入的 GitHub 改写（含历史版本遗留域名）；用户自定义的 url.* 规则保持不动
 if command -v git >/dev/null 2>&1; then
-  git config --global --get-regexp '^url\..*\.(insteadof|pushinsteadof)$' 2>/dev/null | while read -r key _v; do
-    git config --global --unset "$key" 2>/dev/null
-  done
-  echo "  ✓ 已清除 GitHub 加速改写"
+  clear_owned_rules
+  echo "  ✓ 已清除本工具写入的 GitHub 改写（你自定义的其他 git 改写规则保持不动）"
+fi
+
+# 从快照完整还原 url.* 改写规则（快照 = net-doctor 修改前的状态，
+# 里面既可能有你自己的改写，也可能有当时存在的其他规则）—— 云鼎报告整改项：
+# 不再「只删不还原」
+if command -v git >/dev/null 2>&1 && [ -n "$LATEST" ] && [ -f "$LATEST/git-global.txt" ]; then
+  restored=0
+  while IFS='=' read -r k v; do
+    [ -z "$k" ] && continue
+    case "$k" in
+      url.*.insteadof|url.*.pushinsteadof)
+        command git config --global "$k" "$v" 2>/dev/null && restored=$((restored+1)) ;;
+    esac
+  done < "$LATEST/git-global.txt"
+  if [ "$restored" -gt 0 ]; then
+    echo "  ✓ 已从快照还原 $restored 条 git url 改写规则（net-doctor 修改前的状态）"
+  fi
 fi
 
 # Windows 用户级环境变量：有原值恢复原值，原本没有的删除
